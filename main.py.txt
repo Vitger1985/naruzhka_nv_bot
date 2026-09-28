@@ -150,6 +150,7 @@ async def cmd_price(message: Message):
         return
     buttons = []
     for idx, item in SURFACES.items():
+        # Ошибка исправлена: заменено с KeyboardButton на InlineKeyboardButton
         buttons.append([InlineKeyboardButton(text=item['name'], callback_query_data=f"editprice_{idx}")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer("Выберите объект для изменения цены:", reply_markup=keyboard)
