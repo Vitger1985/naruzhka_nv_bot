@@ -7,7 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 # --- НАСТРОЙКИ (Берутся из настроек хостинга BotHost) ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ТОКЕН_НЕ_ЗАДАН")
+BOT_TOKEN = os.getenv("8814656562:AAH96-garuFQZsNAVkp0ApLEJnKW7zzox1g")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 0))  # Ваш Telegram ID (цифрами)
 
 bot = Bot(token=BOT_TOKEN)
