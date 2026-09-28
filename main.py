@@ -5,21 +5,22 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
+from aiogram.client.session.aiohttp import AiohttpSession # Важно для хостинга!
 
-# --- НАСТРОЙКИ (Берутся из пользовательских переменных хостинга) ---
-BOT_TOKEN = os.getenv("MY_SECRET_TOKEN", "ТОКЕН_НЕ_ЗАДАН")
-ADMIN_ID = int(os.getenv("MY_ADMIN_ID", 0))  # Ваш Telegram ID
+# --- НАСТРОЙКИ (Вписываем напрямую для 100% надежности) ---
+BOT_TOKEN = "СЮДА_ВСТАВЬТЕ_ТОКЕН_ИЗ_BOTFATHER"  # <--- Вставьте ваш токен прямо сюда в кавычки
+ADMIN_ID = 123456789  # <--- Вставьте ваш Telegram ID цифрами (БЕЗ кавычек)
 
-bot = Bot(token=BOT_TOKEN)
+# Настройка правильной сетевой сессии, которую требует Bothost
+session = AiohttpSession()
+bot = Bot(token=BOT_TOKEN, session=session)
 dp = Dispatcher()
 
-# --- СОСТОЯНИЯ ДЛЯ АДМИНКИ ---
 class AdminStates(StatesGroup):
     choosing_surface_for_price = State()
     entering_new_price = State()
     entering_broadcast_text = State()
 
-# --- БАЗА ДАННЫХ ПОВЕРХНОСТЕЙ ---
 SURFACES = {
     1: {
         "name": "Цифровой экран 3х6 (Альберта Хаус)", 
@@ -73,11 +74,9 @@ USER_SUBSCRIBERS = set()
 def get_main_menu():
     buttons = []
     for idx, item in SURFACES.items():
-        # Здесь была ошибка — теперь кнопки создаются строго через InlineKeyboardButton
         buttons.append([InlineKeyboardButton(text=f"📦 {item['name']} — {item['price']}₽", callback_query_data=f"view_{idx}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# --- ЛОГИКА ПОЛЬЗОВАТЕЛЯ ---
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     USER_SUBSCRIBERS.add(message.from_user.id)
@@ -88,7 +87,7 @@ async def cmd_start(message: Message):
 
 @dp.callback_query(F.data.startswith("view_"))
 async def view_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_")[1])
+    idx = int(callback.data.split("_"))
     item = SURFACES[idx]
     
     text = (
@@ -105,7 +104,6 @@ async def view_surface(callback: CallbackQuery):
     btn_book = InlineKeyboardButton(text="🤝 Забронировать", callback_query_data=f"book_{idx}")
     btn_map = InlineKeyboardButton(text="📍 Показать на карте", url=item['map_url'])
     btn_back = InlineKeyboardButton(text="⬅️ Назад в меню", callback_query_data="back_to_menu")
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[btn_book], [btn_map], [btn_back]])
     
     await callback.message.delete()
@@ -122,9 +120,8 @@ async def back_menu(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("book_"))
 async def book_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_")[1])
+    idx = int(callback.data.split("_"))
     item = SURFACES[idx]
-    
     if ADMIN_ID != 0:
         try:
             await bot.send_message(
@@ -133,17 +130,13 @@ async def book_surface(callback: CallbackQuery):
             )
         except Exception:
             pass
-            
     await callback.answer("✅ Заявка отправлена! Менеджер свяжется с вами.", show_alert=True)
 
-# --- ЛОГИКА АДМИНИСТРАТОРА ---
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer(
-        "🛠 *Панель администратора*\n\nКоманды:\n/price — Изменить цену объекта\n/broadcast — Сделать рассылку"
-    )
+    await message.answer("🛠 *Панель администратора*\n\nКоманды:\n/price — Изменить цену объекта\n/broadcast — Сделать рассылку")
 
 @dp.message(Command("price"))
 async def cmd_price(message: Message):
@@ -157,7 +150,7 @@ async def cmd_price(message: Message):
 
 @dp.callback_query(F.data.startswith("editprice_"))
 async def select_price_object(callback: CallbackQuery, state: FSMContext):
-    idx = int(callback.data.split("_")[1])
+    idx = int(callback.data.split("_"))
     await state.update_data(edit_idx=idx)
     await state.set_state(AdminStates.entering_new_price)
     await callback.message.answer(f"Введите новую цену (только цифры) для: {SURFACES[idx]['name']}")
@@ -168,11 +161,9 @@ async def save_new_price(message: Message, state: FSMContext):
     if not message.text.isdigit():
         await message.answer("Ошибка! Введите цену только цифрами.")
         return
-    
     data = await state.get_data()
     idx = data['edit_idx']
     new_price = int(message.text)
-    
     SURFACES[idx]['price'] = new_price
     await state.clear()
     await message.answer(f"💰 Цена для *{SURFACES[idx]['name']}* изменена на {new_price}₽!", parse_mode="Markdown")
@@ -188,7 +179,6 @@ async def cmd_broadcast(message: Message, state: FSMContext):
 async def start_broadcast(message: Message, state: FSMContext):
     text_to_send = message.text
     await state.clear()
-    
     count = 0
     for user_id in USER_SUBSCRIBERS:
         try:
@@ -196,7 +186,6 @@ async def start_broadcast(message: Message, state: FSMContext):
             count += 1
         except Exception:
             pass
-            
     await message.answer(f"📢 Рассылка завершена! Получили *{count}* пользователей.", parse_mode="Markdown")
 
 async def main():
@@ -204,4 +193,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
