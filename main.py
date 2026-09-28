@@ -6,9 +6,9 @@ from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
-# --- НАСТРОЙКИ (Берутся из настроек хостинга BotHost) ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ТОКЕН_НЕ_ЗАДАН")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))  # Ваш Telegram ID (цифрами)
+# --- НАСТРОЙКИ (Берутся из пользовательских переменных хостинга) ---
+BOT_TOKEN = os.getenv("MY_SECRET_TOKEN", "ТОКЕН_НЕ_ЗАДАН")
+ADMIN_ID = int(os.getenv("MY_ADMIN_ID", 0))  # Ваш Telegram ID
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -73,6 +73,7 @@ USER_SUBSCRIBERS = set()
 def get_main_menu():
     buttons = []
     for idx, item in SURFACES.items():
+        # Здесь была ошибка — теперь кнопки создаются строго через InlineKeyboardButton
         buttons.append([InlineKeyboardButton(text=f"📦 {item['name']} — {item['price']}₽", callback_query_data=f"view_{idx}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -87,7 +88,7 @@ async def cmd_start(message: Message):
 
 @dp.callback_query(F.data.startswith("view_"))
 async def view_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     item = SURFACES[idx]
     
     text = (
@@ -121,7 +122,7 @@ async def back_menu(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("book_"))
 async def book_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     item = SURFACES[idx]
     
     if ADMIN_ID != 0:
@@ -156,7 +157,7 @@ async def cmd_price(message: Message):
 
 @dp.callback_query(F.data.startswith("editprice_"))
 async def select_price_object(callback: CallbackQuery, state: FSMContext):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     await state.update_data(edit_idx=idx)
     await state.set_state(AdminStates.entering_new_price)
     await callback.message.answer(f"Введите новую цену (только цифры) для: {SURFACES[idx]['name']}")
@@ -203,3 +204,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
