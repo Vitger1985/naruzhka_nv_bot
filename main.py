@@ -8,16 +8,10 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.client.session.aiohttp import AiohttpSession
 
-# Включаем логирование для отображения процессов в консоли BotHost
+# Включаем логирование, чтобы видеть всё в консоли хостинга
 logging.basicConfig(level=logging.INFO)
 
-# --- НАСТРОЙКИ БЕЗОПАСНОСТИ (Данные берутся из панели хостинга) ---
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID_ENV = os.getenv("ADMIN_ID")
-
-# Преобразуем ID админа в число, если переменная задана
-ADMIN_ID = int(ADMIN_ID_ENV) if ADMIN_ID_ENV and ADMIN_ID_ENV.isdigit() else 0
-
+# Инициализируем только диспетчер. Бота создадим внутри main()
 dp = Dispatcher()
 
 class AdminStates(StatesGroup):
@@ -75,6 +69,10 @@ SURFACES = {
 }
 
 USER_SUBSCRIBERS = set()
+
+# Получаем ID админа глобально, но безопасно
+ADMIN_ID_ENV = os.getenv("ADMIN_ID")
+ADMIN_ID = int(ADMIN_ID_ENV) if ADMIN_ID_ENV and ADMIN_ID_ENV.isdigit() else 0
 
 def get_main_menu():
     buttons = []
@@ -200,14 +198,20 @@ async def start_broadcast(message: Message, state: FSMContext):
     await message.answer(f"📢 Рассылка завершена! Получили *{count}* пользователей.", parse_mode="Markdown")
 
 async def main():
-    if not BOT_TOKEN:
-        logging.error("КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения BOT_TOKEN не найдена! Проверьте настройки хостинга.")
+    # Извлекаем токен строго в момент старта функции
+    bot_token = os.getenv("BOT_TOKEN")
+    
+    if not bot_token:
+        logging.error("❌ ОШИБКА: Переменная BOT_TOKEN пустая или не задана в BotHost!")
         return
+
+    # Защитная очистка токена от случайных кавычек/пробелов при копировании
+    bot_token = bot_token.strip().replace("'", "").replace('"', '')
         
     session = AiohttpSession()
-    bot = Bot(token=BOT_TOKEN, session=session)
+    bot = Bot(token=bot_token, session=session)
     
-    logging.info("Бот успешно инициализирован. Запуск polling...")
+    logging.info("🚀 Бот успешно инициализирован. Запуск polling...")
     try:
         await dp.start_polling(bot)
     finally:
