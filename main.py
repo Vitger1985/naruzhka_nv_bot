@@ -1,19 +1,23 @@
 import os
 import asyncio
+import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, URLInputFile
 from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.client.session.aiohttp import AiohttpSession # Важно для хостинга!
+from aiogram.client.session.aiohttp import AiohttpSession
 
-# --- НАСТРОЙКИ (Вписываем напрямую для 100% надежности) ---
-BOT_TOKEN = "СЮДА_ВСТАВЬТЕ_ТОКЕН_ИЗ_BOTFATHER"  # <--- Вставьте ваш токен прямо сюда в кавычки
-ADMIN_ID = 123456789  # <--- Вставьте ваш Telegram ID цифрами (БЕЗ кавычек)
+# Включаем логирование для отображения процессов в консоли BotHost
+logging.basicConfig(level=logging.INFO)
 
-# Настройка правильной сетевой сессии, которую требует Bothost
-session = AiohttpSession()
-bot = Bot(token=BOT_TOKEN, session=session)
+# --- НАСТРОЙКИ БЕЗОПАСНОСТИ (Данные берутся из панели хостинга) ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID_ENV = os.getenv("ADMIN_ID")
+
+# Преобразуем ID админа в число, если переменная задана
+ADMIN_ID = int(ADMIN_ID_ENV) if ADMIN_ID_ENV and ADMIN_ID_ENV.isdigit() else 0
+
 dp = Dispatcher()
 
 class AdminStates(StatesGroup):
@@ -21,6 +25,7 @@ class AdminStates(StatesGroup):
     entering_new_price = State()
     entering_broadcast_text = State()
 
+# База данных рекламных поверхностей Нижневартовска
 SURFACES = {
     1: {
         "name": "Цифровой экран 3х6 (Альберта Хаус)", 
@@ -87,7 +92,7 @@ async def cmd_start(message: Message):
 
 @dp.callback_query(F.data.startswith("view_"))
 async def view_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     item = SURFACES[idx]
     
     text = (
@@ -97,7 +102,7 @@ async def view_surface(callback: CallbackQuery):
         f"▪️ *Локация:* {item['loc']}\n"
         f"▪️ *Подсветка:* {item['light']}\n"
         f"▪️ *Статус:* {item['status']}\n"
-        f"▪️ *{item['extra']}*\n\n"
+        f"▪️ {item['extra']}\n\n"
         f"💰 *Цена за месяц размещения:* {item['price']} руб.\n"
     )
     
@@ -110,7 +115,8 @@ async def view_surface(callback: CallbackQuery):
     try:
         photo_file = URLInputFile(item['photo'])
         await callback.message.answer_photo(photo=photo_file, caption=text, parse_mode="Markdown", reply_markup=keyboard)
-    except Exception:
+    except Exception as e:
+        logging.error(f"Не удалось загрузить фото по URL: {e}. Отправляем только текст.")
         await callback.message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
 
 @dp.callback_query(F.data == "back_to_menu")
@@ -120,27 +126,32 @@ async def back_menu(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("book_"))
 async def book_surface(callback: CallbackQuery):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     item = SURFACES[idx]
+    
     if ADMIN_ID != 0:
         try:
-            await bot.send_message(
+            user = callback.from_user
+            user_info = f"@{user.username}" if user.username else f"ID: {user.id}"
+            await callback.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"🔔 *НОВАЯ ЗАЯВКА ОТ КЛИЕНТА!*\nПользователь @{callback.from_user.username or callback.from_user.id} хочет забронировать объект:\n*{item['name']}*\nСтоимость: {item['price']} руб."
+                text=f"🔔 *НОВАЯ ЗАЯВКА ОТ КЛИЕНТА!*\nПользователь {user_info} хочет забронировать объект:\n*{item['name']}*\nСтоимость: {item['price']} руб.",
+                parse_mode="Markdown"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Не удалось отправить уведомление администратору: {e}")
+            
     await callback.answer("✅ Заявка отправлена! Менеджер свяжется с вами.", show_alert=True)
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != ADMIN_ID or ADMIN_ID == 0:
         return
     await message.answer("🛠 *Панель администратора*\n\nКоманды:\n/price — Изменить цену объекта\n/broadcast — Сделать рассылку")
 
 @dp.message(Command("price"))
 async def cmd_price(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != ADMIN_ID or ADMIN_ID == 0:
         return
     buttons = []
     for idx, item in SURFACES.items():
@@ -150,7 +161,7 @@ async def cmd_price(message: Message):
 
 @dp.callback_query(F.data.startswith("editprice_"))
 async def select_price_object(callback: CallbackQuery, state: FSMContext):
-    idx = int(callback.data.split("_"))
+    idx = int(callback.data.split("_")[1])
     await state.update_data(edit_idx=idx)
     await state.set_state(AdminStates.entering_new_price)
     await callback.message.answer(f"Введите новую цену (только цифры) для: {SURFACES[idx]['name']}")
@@ -170,7 +181,7 @@ async def save_new_price(message: Message, state: FSMContext):
 
 @dp.message(Command("broadcast"))
 async def cmd_broadcast(message: Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != ADMIN_ID or ADMIN_ID == 0:
         return
     await state.set_state(AdminStates.entering_broadcast_text)
     await message.answer("Введите текст объявления для рассылки всем:")
@@ -182,14 +193,25 @@ async def start_broadcast(message: Message, state: FSMContext):
     count = 0
     for user_id in USER_SUBSCRIBERS:
         try:
-            await bot.send_message(chat_id=user_id, text=f"📢 *Объявление:*\n\n{text_to_send}", parse_mode="Markdown")
+            await message.bot.send_message(chat_id=user_id, text=f"📢 *Объявление:*\n\n{text_to_send}", parse_mode="Markdown")
             count += 1
         except Exception:
             pass
     await message.answer(f"📢 Рассылка завершена! Получили *{count}* пользователей.", parse_mode="Markdown")
 
 async def main():
-    await dp.start_polling(bot)
+    if not BOT_TOKEN:
+        logging.error("КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения BOT_TOKEN не найдена! Проверьте настройки хостинга.")
+        return
+        
+    session = AiohttpSession()
+    bot = Bot(token=BOT_TOKEN, session=session)
+    
+    logging.info("Бот успешно инициализирован. Запуск polling...")
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
